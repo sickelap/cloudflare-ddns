@@ -1,0 +1,9 @@
+[auth]
+email = <email>
+key = <auth key>
+
+[zone]
+name = mydomain.com
+
+[update]
+hostname = dynamic-name.mydomain.com

@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+import sys
+import requests
+import getopt
+import configparser
+
+config_path='/etc/cloudflare-ddns.conf'
+api='https://api.cloudflare.com/client/v4'
+_verbose=False
+
+try:
+    opts, args = getopt.getopt(sys.argv[1:], "v", ["--verbose"])
+except getopt.GetoptError as err:
+    print(err)
+    sys.exit(2)
+
+for o, a in opts:
+    if o in ("-v", "--verbose"):
+        _verbose = True
+    else:
+        assert False, "unhandled option"
+
+
+def get_config(section, option):
+    config = configparser.RawConfigParser()
+    config.read(config_path)
+    items = dict(config.items(section))
+    return items[option] if option in items else None
+
+
+def get_headers():
+    return {
+        'X-Auth-Email': get_config('auth', 'email'),
+        'X-Auth-Key': get_config('auth', 'key'),
+        'Content-Type': 'application/json'
+    }
+
+
+def find_zone(name):
+    print(f'find_zone({name})') if _verbose else None
+    headers = get_headers()
+    res = requests.get(f'{api}/zones?name={name}', headers=headers)
+    if not res.ok:
+        print(res.text) if _verbose else None
+        sys.exit(1)
+    data = res.json()
+    if len(data['result']) == 0:
+        print('empty result') if _verbose else None
+        sys.exit(2)
+    return data['result'][0]
+
+
+def find_record(zone_id, hostname):
+    print(f'find_record({zone_id},{hostname})') if _verbose else None
+    headers = get_headers()
+    res = requests.get(f'{api}/zones/{zone_id}/dns_records', headers=headers)
+    if not res.ok:
+        print(res.text) if _verbose else None
+        sys.exit(1)
+    data = res.json()
+    if len(data['result']) == 0:
+        print('empty result') if _verbose else None
+        sys.exit(2)
+    records = dict((r['name'], r) for r in data['result'])
+    print(records[hostname]) if _verbose and hostname in records else None
+    return records[hostname] if hostname in records else None
+
+
+def find_current_ip():
+    res = requests.get('http://ifconfig.me')
+    if not res.ok:
+        print('failed to find current ip') if _verbose else None
+        sys.exit(1)
+    return res.text
+
+
+def update_record(record, ip):
+    headers = get_headers()
+    zone_id = record['zone_id']
+    record_id = record['id']
+    data = {
+        'content': ip,
+    }
+    res = requests.patch(f'{api}/zones/{zone_id}/dns_records/{record_id}', headers=headers, json=data)
+    if not res.ok:
+        print('failed to update record') if _verbose else None
+        sys.exit(1)
+
+
+def create_record(zone_id, hostname, ip):
+    headers = get_headers()
+    data = {
+        'type': 'A',
+        'name': hostname,
+        'content': ip,
+        'ttl': 1 # automatic
+    }
+    res = requests.post(f'{api}/zones/{zone_id}/dns_records', headers=headers, json=data)
+    if not res.ok:
+        print('failed to create record') if _verbose else None
+        sys.exit(1)
+
+
+zone = find_zone(get_config('zone', 'name'))
+record = find_record(zone['id'], get_config('update', 'hostname'))
+current_ip = find_current_ip()
+if record:
+    if record['content'] != current_ip:
+        print('updating') if _verbose else None
+        update_record(record, current_ip)
+    else:
+        print('not updating') if _verbose else None
+else:
+    print('creating record') if _verbose else None
+    create_record(zone['id'], get_config('update', 'hostname'), current_ip)
