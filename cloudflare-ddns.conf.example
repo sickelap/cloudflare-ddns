@@ -1,6 +1,5 @@
 [auth]
-email = <email>
-key = <auth key>
+token = <API Token>
 
 [zone]
 name = mydomain.com

@@ -30,8 +30,7 @@ def get_config(section, option):
 
 def get_headers():
     return {
-        'X-Auth-Email': get_config('auth', 'email'),
-        'X-Auth-Key': get_config('auth', 'key'),
+        'Authorization': 'Bearer ' + get_config('auth', 'token'),
         'Content-Type': 'application/json'
     }
 
